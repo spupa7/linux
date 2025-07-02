@@ -687,6 +687,16 @@
 	status = "okay";
 };
 
+&i2c14 {
+	status = "okay";
+	multi-master;
+	mctp-controller;
+	mctp@10 {
+		compatible = "mctp-i2c-controller";
+		reg = <(0x10 | I2C_OWN_SLAVE_ADDRESS)>;
+	};
+};
+
 &jtag1 {
 	status = "okay";
 };
