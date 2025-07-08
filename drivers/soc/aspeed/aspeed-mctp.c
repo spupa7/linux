@@ -10,6 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/list_sort.h>
+#include <linux/mctp-pcie-vdm.h>
 #include <linux/mfd/syscon.h>
 #include <linux/miscdevice.h>
 #include <linux/mm.h>
@@ -181,13 +182,13 @@
 #define MCTP_HDR_SOM			BIT(7)
 #define MCTP_HDR_EOM			BIT(6)
 #define MCTP_HDR_SOM_EOM		(MCTP_HDR_SOM | MCTP_HDR_EOM)
-#define MCTP_HDR_TYPE_OFFSET		16
+#define MCTP_PAYLOAD_TYPE_OFFSET	0
 #define MCTP_HDR_TYPE_CONTROL		0
 #define MCTP_HDR_TYPE_VDM_PCI		0x7e
 #define MCTP_HDR_TYPE_SPDM		0x5
 #define MCTP_HDR_TYPE_BASE_LAST		MCTP_HDR_TYPE_SPDM
-#define MCTP_HDR_VENDOR_OFFSET		17
-#define MCTP_HDR_VDM_TYPE_OFFSET	19
+#define MCTP_PAYLOAD_VENDOR_OFFSET	1
+#define MCTP_PAYLOAD_VDM_TYPE_OFFSET	3
 
 /* MCTP header DW little endian mask definitions */
 /* 0th DW */
@@ -327,6 +328,10 @@ struct aspeed_mctp {
 	/* Delayed work for periodic detection of Rx packets */
 	struct delayed_work rx_det_dwork;
 	u32 rx_det_period_us;
+#ifdef CONFIG_MCTP_TRANSPORT_PCIE_VDM
+	/* MCTP PCIe VDM device */
+	struct mctp_pcie_vdm_dev *vdm_dev;
+#endif
 };
 
 struct mctp_client {
@@ -702,26 +707,18 @@ aspeed_mctp_find_handler(struct aspeed_mctp *priv,
 			 struct mctp_pcie_packet *packet)
 {
 	struct mctp_type_handler *handler;
-	u8 *hdr = (u8 *)packet->data.hdr;
+	u8 *payload = (u8 *)packet->data.payload;
 	struct mctp_client *client = NULL;
-	u8 mctp_type, som_eom;
+	u8 mctp_type;
 	u16 vendor = 0;
 	u16 vdm_type = 0;
 
 	lockdep_assert_held(&priv->clients_lock);
 
-	/*
-	 * Middle and EOM fragments cannot be matched to MCTP type.
-	 * For consistency do not match type for any fragmented messages.
-	 */
-	som_eom = hdr[MCTP_HDR_TAG_OFFSET] & MCTP_HDR_SOM_EOM;
-	if (som_eom != MCTP_HDR_SOM_EOM)
-		return NULL;
-
-	mctp_type = hdr[MCTP_HDR_TYPE_OFFSET];
+	mctp_type = payload[MCTP_PAYLOAD_TYPE_OFFSET];
 	if (mctp_type == MCTP_HDR_TYPE_VDM_PCI) {
-		vendor = *((u16 *)&hdr[MCTP_HDR_VENDOR_OFFSET]);
-		vdm_type = *((u16 *)&hdr[MCTP_HDR_VDM_TYPE_OFFSET]);
+		vendor = *((u16 *)&payload[MCTP_PAYLOAD_VENDOR_OFFSET]);
+		vdm_type = *((u16 *)&payload[MCTP_PAYLOAD_VDM_TYPE_OFFSET]);
 	}
 
 	list_for_each_entry(handler, &priv->mctp_type_handlers, link) {
@@ -767,6 +764,9 @@ static void aspeed_mctp_dispatch_packet(struct aspeed_mctp *priv,
 		} else {
 			wake_up_all(&client->wait_queue);
 		}
+#ifdef CONFIG_MCTP_TRANSPORT_PCIE_VDM
+		mctp_pcie_vdm_notify_rx(priv->vdm_dev);
+#endif
 		aspeed_mctp_client_put(client);
 	} else {
 		dev_dbg(priv->dev, "Failed to dispatch RX packet\n");
@@ -870,6 +870,10 @@ static void aspeed_mctp_rx_tasklet(unsigned long data)
 	struct aspeed_mctp_rx_cmd *rx_cmd;
 	u32 hw_read_ptr;
 	u32 *hdr, *payload;
+	bool rx_full;
+
+	/* initialized as false */
+	rx_full = false;
 
 	if (priv->match_data->vdm_hdr_direct_xfer && priv->match_data->fifo_auto_surround) {
 		struct mctp_pcie_packet_data *rx_buf;
@@ -877,6 +881,12 @@ static void aspeed_mctp_rx_tasklet(unsigned long data)
 
 		/* Trigger HW read pointer update, must be done before RX loop */
 		regmap_write(priv->map, ASPEED_MCTP_RX_BUF_RD_PTR, UPDATE_RX_RD_PTR);
+
+		/*
+		 * rx->stopped indicates if rx ring is full or not.
+		 * Use rx_full to note ring status before consuming packet.
+		 */
+		rx_full = rx->stopped;
 
 		/*
 		 * XXX: Using rd_ptr obtained from HW is unreliable so we need to
@@ -1034,9 +1044,26 @@ static void aspeed_mctp_rx_tasklet(unsigned long data)
 
 	/* Kick RX if it was stopped due to ring full condition */
 	if (rx->stopped) {
-		regmap_update_bits(priv->map, ASPEED_MCTP_CTRL, RX_CMD_READY,
-				   RX_CMD_READY);
-		rx->stopped = false;
+		if (!rx_full) {
+			/*
+			 * RX ring may still be full in here as the HW keeps producing when Tasklet consumes the packets.
+			 * Use rx_full to detect if RX ring is already full before or after Tasklet consumption.
+			 * Schedule another tasklet here to consume RX ring before restarting reception if ring is full after the while loop,
+			 * in case that RX_CMD_NO_MORE_INT interrupts tasklet after tasklet consumes packets.
+			 * Use flag cause we cannot control if ASPEED_MCTP_RX_BUF_WR_PTR can be updated before ring full occurs.
+			 * Example of problematic scenario:
+			 * 1. Tasklet executing, found *hdr==0 at wr_ptr=14, break the while loop and going forward.
+			 * 2. After leaving the loop, Tasklet spend time doing some time-consuming stuffs like printing log.
+			 * 3. HW keep receiving during step2, and triggered RX_CMD_NO_MORE_INT to set rx->stopped to true in the IRQ handler.
+			 * 4. CPU returns to Tasklet, after step2 the tasklet sees rx->stopped == true, therefore kick RX_READY to restart RX.
+			 * 5. Issue reproduced, RX restarted without stored packets consumed, and get overwritten later.
+			 */
+			tasklet_hi_schedule(&priv->rx.tasklet);
+		} else {
+			rx->stopped = false;
+			regmap_update_bits(priv->map, ASPEED_MCTP_CTRL, RX_CMD_READY,
+					   RX_CMD_READY);
+		}
 	}
 }
 
@@ -1208,6 +1235,7 @@ int aspeed_mctp_send_packet(struct mctp_client *client,
 	struct aspeed_mctp *priv = client->priv;
 	u32 *hdr_dw = (u32 *)packet->data.hdr;
 	u8 *hdr = (u8 *)packet->data.hdr;
+	u8 *payload = (u8 *)packet->data.payload;
 	u16 packet_data_sz_dw;
 	u16 pci_data_len_dw;
 	int ret;
@@ -1238,7 +1266,7 @@ int aspeed_mctp_send_packet(struct mctp_client *client,
 	 * XXX Don't update EID for MCTP Control messages - old EID may
 	 * interfere with MCTP discovery flow.
 	 */
-	if (priv->eid && hdr[MCTP_HDR_TYPE_OFFSET] != MCTP_HDR_TYPE_CONTROL)
+	if (priv->eid && payload[MCTP_PAYLOAD_TYPE_OFFSET] != MCTP_HDR_TYPE_CONTROL)
 		hdr[MCTP_HDR_SRC_EID_OFFSET] = priv->eid;
 
 	ret = ptr_ring_produce_bh(&client->tx_queue, packet);
@@ -1453,7 +1481,8 @@ int aspeed_mctp_remove_type_handler(struct mctp_client *client,
 	return ret;
 }
 
-static int aspeed_mctp_register_default_handler(struct mctp_client *client)
+EXPORT_SYMBOL_GPL(aspeed_mctp_register_default_handler);
+int aspeed_mctp_register_default_handler(struct mctp_client *client)
 {
 	struct aspeed_mctp *priv = client->priv;
 	int ret = 0;
@@ -1907,6 +1936,82 @@ static __poll_t aspeed_mctp_poll(struct file *file,
 	return ret;
 }
 
+#ifdef CONFIG_MCTP_TRANSPORT_PCIE_VDM
+static int aspeed_mctp_pcie_vdm_op_send_pkt(struct device *dev,
+					    u8 *data, size_t size)
+{
+	struct mctp_pcie_packet *packet;
+	struct platform_device *pdev;
+	struct aspeed_mctp *priv;
+	int rc;
+
+	pdev = to_platform_device(dev);
+	priv = platform_get_drvdata(pdev);
+	// freed at aspeed-mctp tx tasklet or send failure
+	packet = aspeed_mctp_packet_alloc(GFP_KERNEL);
+
+	if (!packet) {
+		dev_err(priv->dev, "failed to alloc packet\n");
+		return -ENOMEM;
+	}
+
+	memcpy((u8 *)&packet->data.hdr, data, PCIE_VDM_HDR_SIZE);
+	memcpy((u8 *)&packet->data.payload, data + PCIE_VDM_HDR_SIZE, size);
+	packet->size = (size + PCIE_VDM_HDR_SIZE);
+
+	rc = aspeed_mctp_send_packet(priv->default_client, packet);
+	if (rc) {
+		dev_err(priv->dev, "failed to send packet\n");
+		aspeed_mctp_packet_free(packet);
+		return rc;
+	}
+	return 0;
+}
+
+static u8 *aspeed_mctp_pcie_vdm_op_recv_pkt(struct device *dev)
+{
+	struct platform_device *pdev;
+	struct aspeed_mctp *priv;
+	struct mctp_pcie_packet *rx_packet;
+
+	pdev = to_platform_device(dev);
+	priv = platform_get_drvdata(pdev);
+	rx_packet = aspeed_mctp_receive_packet(priv->default_client, 0);
+
+	if (IS_ERR(rx_packet)) {
+		if (PTR_ERR(rx_packet) == -ETIME) {
+			dev_dbg(priv->dev, "no packet received\n");
+		} else {
+			dev_err(priv->dev, "failed to receive packet: %ld\n",
+				PTR_ERR(rx_packet));
+		}
+		return (u8 *)rx_packet;
+	}
+	return (u8 *)&rx_packet->data;
+}
+
+static void aspeed_mctp_pcie_vdm_op_uninit(struct device *dev)
+{
+	struct platform_device *pdev;
+	struct aspeed_mctp *priv;
+
+	pdev = to_platform_device(dev);
+	priv = platform_get_drvdata(pdev);
+
+	aspeed_mctp_flush_all_tx_queues(priv);
+	aspeed_mctp_flush_rx_queue(priv->default_client);
+	aspeed_mctp_delete_client(priv->default_client);
+}
+
+static const struct mctp_pcie_vdm_ops aspeed_mctp_pcie_vdm_ops = {
+	.send_packet = aspeed_mctp_pcie_vdm_op_send_pkt,
+	.recv_packet = aspeed_mctp_pcie_vdm_op_recv_pkt,
+	.free_packet = aspeed_mctp_packet_free,
+	.uninit = aspeed_mctp_pcie_vdm_op_uninit,
+};
+
+#endif
+
 static const struct file_operations aspeed_mctp_fops = {
 	.owner = THIS_MODULE,
 	.open = aspeed_mctp_open,
@@ -1954,6 +2059,7 @@ static void aspeed_mctp_pcie_setup(struct aspeed_mctp *priv)
 {
 	int ret;
 	u8 tx_max_payload_size;
+	u8 rx_max_payload_size;
 	struct kobject *kobj = &priv->mctp_miscdev.this_device->kobj;
 
 	ret = _get_bdf(priv);
@@ -1963,24 +2069,33 @@ static void aspeed_mctp_pcie_setup(struct aspeed_mctp *priv)
 		if (priv->match_data->need_address_mapping)
 			regmap_update_bits(priv->map, ASPEED_MCTP_EID,
 					   MEMORY_SPACE_MAPPING, BIT(31));
-		if (priv->match_data->dma_need_64bits_width)
+		if (priv->match_data->dma_need_64bits_width) {
 			tx_max_payload_size =
 				FIELD_GET(TX_MAX_PAYLOAD_SIZE_MASK,
 					  ilog2(ASPEED_MCTP_MTU >> 6));
-		else
-		/*
-		 * In ast2600, tx som and eom will not match expected result.
-		 * e.g. When Maximum Transmit Unit (MTU) set to 64 byte, and then transfer
-		 * size set between 61 ~ 124 (MTU-3 ~ 2*MTU-4), the engine will set all
-		 * packet vdm header eom to 1, no matter what it setted. To fix that
-		 * issue, the driver set MTU to next level(e.g. 64 to 128).
-		 */
+			rx_max_payload_size =
+				FIELD_GET(RX_MAX_PAYLOAD_SIZE_MASK,
+					  (ilog2(ASPEED_MCTP_MTU >> 6)) << RX_MAX_PAYLOAD_SIZE_SHIFT);
+		} else {
+			/*
+			 * In ast2600, tx som and eom will not match expected result.
+			 * e.g. When Maximum Transmit Unit (MTU) set to 64 byte, and then transfer
+			 * size set between 61 ~ 124 (MTU-3 ~ 2*MTU-4), the engine will set all
+			 * packet vdm header eom to 1, no matter what it setted. To fix that
+			 * issue, the driver set MTU to next level(e.g. 64 to 128).
+			 */
 			tx_max_payload_size =
 				FIELD_GET(TX_MAX_PAYLOAD_SIZE_MASK,
-					  fls(ASPEED_MCTP_MTU >> 6));
+						fls(ASPEED_MCTP_MTU >> 6));
+			rx_max_payload_size =
+				FIELD_GET(RX_MAX_PAYLOAD_SIZE_MASK,
+					   (fls(ASPEED_MCTP_MTU >> 6)) << RX_MAX_PAYLOAD_SIZE_SHIFT);
+		}
+
 		regmap_update_bits(priv->map, ASPEED_MCTP_ENGINE_CTRL,
-				   TX_MAX_PAYLOAD_SIZE_MASK,
-				   tx_max_payload_size);
+				   TX_MAX_PAYLOAD_SIZE_MASK | RX_MAX_PAYLOAD_SIZE_MASK,
+				   (rx_max_payload_size << RX_MAX_PAYLOAD_SIZE_SHIFT) | tx_max_payload_size);
+
 		aspeed_mctp_flush_all_tx_queues(priv);
 		if (!priv->miss_mctp_int) {
 			aspeed_mctp_irq_enable(priv);
@@ -2039,7 +2154,7 @@ static irqreturn_t aspeed_mctp_irq_handler(int irq, void *arg)
 	if (status & TX_CMD_SENT_INT) {
 		tasklet_hi_schedule(&priv->tx.tasklet);
 		if (!priv->match_data->fifo_auto_surround)
-			priv->tx.rd_ptr = priv->tx.rd_ptr + 1 % TX_PACKET_COUNT;
+			priv->tx.rd_ptr = (priv->tx.rd_ptr + 1) % TX_PACKET_COUNT;
 		handled |= TX_CMD_SENT_INT;
 	}
 
@@ -2197,7 +2312,7 @@ static int aspeed_mctp_dma_init(struct aspeed_mctp *priv)
 		dma_alloc_coherent(priv->dev, alloc_size, &rx->data.dma_handle, GFP_KERNEL);
 
 	if (!rx->data.vaddr)
-		return ret;
+		return -ENOMEM;
 
 	alloc_size = PAGE_ALIGN(priv->rx_packet_count * priv->match_data->rx_cmd_size);
 	rx->cmd.vaddr = dma_alloc_coherent(priv->dev, alloc_size, &rx->cmd.dma_handle, GFP_KERNEL);
@@ -2236,7 +2351,7 @@ out_rx_cmd:
 	dma_free_coherent(priv->dev, alloc_size, rx->data.vaddr,
 			  rx->data.dma_handle);
 
-	return ret;
+	return -ENOMEM;
 }
 
 static void aspeed_mctp_dma_fini(struct aspeed_mctp *priv)
@@ -2370,6 +2485,23 @@ static int aspeed_mctp_probe(struct platform_device *pdev)
 		goto out_drv;
 	}
 
+#ifdef CONFIG_MCTP_TRANSPORT_PCIE_VDM
+	struct mctp_pcie_vdm_dev *vdm_dev;
+	struct mctp_client *client;
+
+	/** use priv's default client to send/receive mctp packets */
+	client = aspeed_mctp_create_client(priv);
+	aspeed_mctp_register_default_handler(client);
+
+	vdm_dev = mctp_pcie_vdm_add_dev(priv->dev);
+	if (IS_ERR(vdm_dev)) {
+		dev_err(priv->dev, "Failed to add mctp pcie vdm device Err %ld\n", PTR_ERR(vdm_dev));
+		goto out_drv;
+	}
+	priv->vdm_dev = vdm_dev;
+	mctp_pcie_vdm_register_ops(vdm_dev, &aspeed_mctp_pcie_vdm_ops);
+#endif
+
 	ret = aspeed_mctp_dma_init(priv);
 	if (ret) {
 		dev_err(priv->dev, "Failed to init DMA\n");
@@ -2387,7 +2519,7 @@ static int aspeed_mctp_probe(struct platform_device *pdev)
 		return id;
 	priv->mctp_miscdev.parent = priv->dev;
 	priv->mctp_miscdev.minor = MISC_DYNAMIC_MINOR;
-	priv->mctp_miscdev.name = kasprintf(GFP_KERNEL, "aspeed-mctp%d", id);
+	priv->mctp_miscdev.name = devm_kasprintf(priv->dev, GFP_KERNEL, "aspeed-mctp%d", id);
 	priv->mctp_miscdev.fops = &aspeed_mctp_fops;
 	ret = misc_register(&priv->mctp_miscdev);
 	if (ret) {
@@ -2403,7 +2535,7 @@ static int aspeed_mctp_probe(struct platform_device *pdev)
 	}
 	aspeed_mctp_pcie_setup(priv);
 
-	name = kasprintf(GFP_KERNEL, "peci-mctp%d", id);
+	name = devm_kasprintf(priv->dev, GFP_KERNEL, "peci-mctp%d", id);
 	priv->peci_mctp =
 		platform_device_register_data(priv->dev, name, PLATFORM_DEVID_NONE, NULL, 0);
 	if (IS_ERR(priv->peci_mctp))
@@ -2423,6 +2555,10 @@ out:
 static int aspeed_mctp_remove(struct platform_device *pdev)
 {
 	struct aspeed_mctp *priv = platform_get_drvdata(pdev);
+
+#ifdef CONFIG_MCTP_TRANSPORT_PCIE_VDM
+	mctp_pcie_vdm_remove_dev(priv->vdm_dev);
+#endif
 
 	platform_device_unregister(priv->peci_mctp);
 
@@ -2496,6 +2632,7 @@ static struct platform_driver aspeed_mctp_driver = {
 
 static int __init aspeed_mctp_init(void)
 {
+	pr_info("aspeed_mctp_init\n");
 	packet_cache =
 		kmem_cache_create_usercopy("mctp-packet",
 					   sizeof(struct mctp_pcie_packet),
