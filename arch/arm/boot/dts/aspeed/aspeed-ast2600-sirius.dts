@@ -8,8 +8,8 @@
 #include <dt-bindings/i2c/i2c.h>
 
 / {
-	model = "AST2600 EVB";
-	compatible = "aspeed,ast2600-evb", "aspeed,ast2600";
+	model = "AST2600 SIRIUS";
+	compatible = "aspeed,ast2600";
 
 	aliases {
 		serial4 = &uart5;
