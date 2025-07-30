@@ -798,10 +798,6 @@
 };
 #endif
 
-&pcie1 {
-	status = "okay";
-};
-
 &espi {
 	status = "okay";
 	perif-dma-mode;
