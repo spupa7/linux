@@ -690,7 +690,7 @@
 &i2c13 {
 	status = "okay";
 	multi-master;
-	ec@2d {
+	lenovo-mec1723-i2c@2d {
 		compatible = "microchip,lenovo-mec1723-i2c";
 		reg = <0x2d>;
 	};

@@ -81,7 +81,8 @@ static struct proc_ops fops = {
  * @brief This function is called on loading the driver 
  */
 static int mec1723_probe(struct i2c_client *client, const struct i2c_device_id *id) {
-	printk("dt_i2c - Now I am in the Probe function!\n");
+	printk("dt_i2c - Now I am in the Probe function! 1\n");
+	pr_err("dt_i2c - Now I am in the Probe function! 2\n");
 
 	if(client->addr != 0x2d) {
 		printk("dt_i2c - I2C Address must be = 0x2d\n");
@@ -93,7 +94,8 @@ static int mec1723_probe(struct i2c_client *client, const struct i2c_device_id *
 	/* Creating procfs file */
 	proc_file = proc_create("lenovo-mec1723-i2c", 0666, NULL, &fops);
 	if(proc_file == NULL) {
-		printk("dt_i2c - Error creating /proc/lenovo-mec1723-i2c\n");
+		printk("dt_i2c - Error creating /proc/lenovo-mec1723-i2c 1\n");
+		pr_err("dt_i2c - Error creating /proc/lenovo-mec1723-i2c 2\n");
 		return -1; // was return -ENOMEM but that is undefined?
 	}
 
