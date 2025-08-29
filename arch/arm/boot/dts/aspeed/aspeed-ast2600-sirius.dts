@@ -689,7 +689,6 @@
 
 &i2c13 {
 	status = "okay";
-	multi-master;
 	lenovo-mec1723-i2c@2d {
 		compatible = "microchip,lenovo-mec1723-i2c";
 		reg = <0x2d>;
@@ -944,91 +943,6 @@ spd_ ## bus ## _ ## index: spd@addr,4cc5118 ## index ## 000 { \
 	bcr = /bits/ 8 <0x6>; \
 }
 
-#include <dt-bindings/i3c/i3c.h>
-
-&i3c0 {
-	status = "okay";
-	bus-context = /bits/ 8 <I3C_BUS_CONTEXT_JESD403>;
-	/* Renesas IMX3102 multiplexer w/ thermal sensor */
-	imx3102_0: i3cmux@f,4cc31020000 {
-		reg = <0xf 0x4cc 0x31020000>;
-		assigned-address = <0xf>;
-		dcr = /bits/ 8 <0xd1>;
-		bcr = /bits/ 8 <0x6>;
-	};
-
-	JESD300_SPD_I3C_MODE(0, 0, 50);
-	JESD300_SPD_I3C_MODE(0, 1, 51);
-};
-
-&i3c1 {
-	status = "okay";
-	bus-context = /bits/ 8 <I3C_BUS_CONTEXT_JESD403>;
-	 /* Renesas IMX3102 multiplexer w/ thermal sensor */
-	imx3102_1: i3cmux@f,4cc31020000 {
-		reg = <0xf 0x4cc 0x31020000>;
-		assigned-address = <0xf>;
-		dcr = /bits/ 8 <0xd1>;
-		bcr = /bits/ 8 <0x6>;
-	};
-
-	JESD300_SPD_I3C_MODE(1, 0, 50);
-	JESD300_SPD_I3C_MODE(1, 1, 51);
-};
-
-&i3c2 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_i3c3_default>;
-
-	bus-context = /bits/ 8 <I3C_BUS_CONTEXT_JESD403>;
-	/* Renesas IMX3102 multiplexer w/ thermal sensor */
-	i3cmux@f {
-		compatible = "eeprom";
-		reg = <0xf 0x0 0x00000000>;
-	};
-
-	JESD300_SPD_I2C_MODE(2, 0, 52);
-	JESD300_SPD_I2C_MODE(2, 1, 53);
-};
-
-&i3c3 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_i3c4_default>;
-
-	bus-context = /bits/ 8 <I3C_BUS_CONTEXT_JESD403>;
-	/* Renesas IMX3102 multiplexer w/ thermal sensor */
-	i3cmux@f {
-		compatible = "eeprom";
-		reg = <0xf 0x0 0x00000000>;
-	};
-
-	JESD300_SPD_I2C_MODE(3, 0, 52);
-	JESD300_SPD_I2C_MODE(3, 1, 53);
-};
-
-/*
- * I3C loopback: connect I3C4 (target) to I3C5 (primary master)
- * Four devices will be created under /sys/bus/i3c/devices
- *   i3c-4: represent i3c4 controller, play the role as the target device
- *   i3c-5: represent i3c5 controller, play the role as the master device
- *   5-7ec05034000: the device descriptor represents the target device attached
- *		    to the bus hosted by i3c-5 controller. In this case,
- *		    5-7ec05034000 maps to the physical device i3c4.
- *   4-target: the device descriptor represents i3c-4 itself.
- */
-&i3c4 {
-	initial-role = "target";
-	pid = <0x000007ec 0x05034000>;
-	dcr = /bits/ 8 <0xcc>;
-	status = "okay";
-};
-
-&i3c5 {
-	initial-role = "primary";
-	status = "okay";
-};
 
 &ssp {
 	memory-region = <&ssp_memory>;
