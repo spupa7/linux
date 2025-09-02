@@ -676,9 +676,9 @@
 &i2c8 {
 	status = "okay";
 
-	lm75@4d {
+	lm75@4e {
 		compatible = "national,lm75";
-		reg = <0x4d>;
+		reg = <0x4e>;
 	};
 
 };
@@ -899,50 +899,11 @@
 	status = "okay";
 };
 
-/*
- * Aspeed I3C daughter card configuration
- *
- * IMX3102: 2-to-1 multiplexier
- * SPD5118: SPD Hub device
- *
- * +---------------------+
- * | SoC		 |
- * |			 |
- * | I3C controller #0 - | --+
- * |			 |    \			SPD5118@50 (I3C mode)
- * |			 |     +-----------+	|
- * |			 |     | IMX3102@f | ---+--+---- i3c bus
- * |			 |     | (I3C mode)|	   |
- * |			 |     +-----------+	   |
- * |			 |    /			   SPD5118@51 (I3C mode)
- * | I3C controller #1 - | --+
- * |			 |
- * |			 |
- * | I3C controller #2 - | --+
- * |			 |    \			SPD5118@52 (I2C mode)
- * |			 |     +-----------+	|
- * |			 |     | IMX3102@f | ---+--+---- i2c bus
- * |			 |     | (I2C mode)|	   |
- * |			 |     +-----------+	   |
- * |			 |    /			   SPD5118@53 (I2C mode)
- * | I3C controller #3 - | --+
- * |			 |
- * +---------------------+
- */
 #define JESD300_SPD_I2C_MODE(bus, index, addr) \
 spd_ ## bus ## _ ## index: spd@addr { \
 	compatible = "eeprom"; \
 	reg = <0x ## addr 0x0 0x0>;	\
 }
-
-#define JESD300_SPD_I3C_MODE(bus, index, addr) \
-spd_ ## bus ## _ ## index: spd@addr,4cc5118 ## index ## 000 { \
-	reg = <0x ## addr 0x4cc 0x5118 ## index ## 000>; \
-	assigned-address = <0x ## addr>; \
-	dcr = /bits/ 8 <0xda>; \
-	bcr = /bits/ 8 <0x6>; \
-}
-
 
 &ssp {
 	memory-region = <&ssp_memory>;

@@ -1,7 +1,4 @@
 // Citations - Authorship
-// 
-// Derived from dt_i2c.c
-// *Author: Johannes 4GNU_Linux
 
 // Includes
 #include <linux/module.h>
