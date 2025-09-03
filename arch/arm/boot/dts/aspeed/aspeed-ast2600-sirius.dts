@@ -905,6 +905,14 @@ spd_ ## bus ## _ ## index: spd@addr { \
 	reg = <0x ## addr 0x0 0x0>;	\
 }
 
+#define JESD300_SPD_I3C_MODE(bus, index, addr) \
+spd_ ## bus ## _ ## index: spd@addr,4cc5118 ## index ## 000 { \
+	reg = <0x ## addr 0x4cc 0x5118 ## index ## 000>; \
+	assigned-address = <0x ## addr>; \
+	dcr = /bits/ 8 <0xda>; \
+	bcr = /bits/ 8 <0x6>; \
+}
+
 &ssp {
 	memory-region = <&ssp_memory>;
 };
