@@ -256,8 +256,8 @@ config SENSORS_ADT7475
 	  This driver can also be built as a module. If so, the module
 	  will be called adt7475.
 
-config SENSORS_I2C_MICROCHIP_MEC1723
-	tristate "Microchip Mec1723"
+config SENSORS_MEC1723
+	tristate "Microchip, MEC1723"
 	depends on I2C
 	help
 	  I do not know what text should go here. Using this to debug.

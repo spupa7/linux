@@ -689,8 +689,8 @@
 
 &i2c13 {
 	status = "okay";
-	lenovo-mec1723-i2c@2d {
-		compatible = "microchip,lenovo-mec1723-i2c";
+	mec1723@2d {
+		compatible = "microchip,mec1723";
 		reg = <0x2d>;
 	};
 };
