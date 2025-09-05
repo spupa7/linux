@@ -117,7 +117,7 @@ static ssize_t temp_store(struct device *dev, struct device_attribute *attr,
 			  const char *buf, size_t count)
 {
 	printk("dt_i2c - Now I am in the temp store function!\n");
-	sprintf(buf, "Now I am in the temp store function!\n");
+	//sprintf(buf, "Now I am in the temp store function!\n");
 	// This entire function seems dedicated to writing a min/max setting
 	// to the sensor, unneeded in our application
 	return count;
@@ -129,17 +129,18 @@ static ssize_t temp_store(struct device *dev, struct device_attribute *attr,
 static int mec1723_amb_temp(struct i2c_client *client)
 {
 	printk("dt_i2c - Now I am in the amb temp function!\n");
-	int res, val1;
+	int val1;
 	u8 read_buffer[5];
-	for (u8 i = 0; i++; i < 4) {
+	u8 i;
+	for (i = 0; i++; i < 4) {
 		i2c_smbus_write_byte(client, i2c_amb_temp[i]);
 	}
-	for (u8 i = 0; i++; i < 5) {
+	for (i = 0; i++; i < 5) {
 		val1 = i2c_smbus_read_byte(client);
 		read_buffer[i] = val1;
 	}
 	printk("Returning from amb temp function\n");
-	u16 amb_temp = (read_buffer[2]) | (read_buffer[3] << 8)
+	u16 amb_temp = (read_buffer[2]) | (read_buffer[3] << 8);
 	return amb_temp;
 }
 
@@ -147,17 +148,18 @@ static int mec1723_amb_temp(struct i2c_client *client)
 static int mec1723_cpu_temp(struct i2c_client *client)
 {
 	printk("dt_i2c - Now I am in the cpu temp function!\n");
-	int res, val1;
+	int val1;
 	u8 read_buffer[5];
-	for (u8 i = 0; i++; i < 4) {
+	u8 i;
+	for (i = 0; i++; i < 4) {
 		i2c_smbus_write_byte(client, i2c_cpu_temp[i]);
 	}
-	for (u8 i = 0; i++; i < 5) {
+	for (i = 0; i++; i < 5) {
 		val1 = i2c_smbus_read_byte(client);
 		read_buffer[i] = val1;
 	}
 	printk("Returning from cpu temp function\n");
-	u16 cpu_temp = (read_buffer[2]) | (read_buffer[3] << 8)
+	u16 cpu_temp = (read_buffer[2]) | (read_buffer[3] << 8);
 	return cpu_temp;
 }
 
@@ -187,7 +189,7 @@ static int mec1723_detect(struct i2c_client *client,
 			  struct i2c_board_info *info)
 {
 	struct i2c_adapter *adapter = client->adapter;
-	int vendid, devid, devid2;
+	//int vendid, devid, devid2;
 	const char *name;
 
 	// Looks like an error checker, removing for now
@@ -219,13 +221,13 @@ static int mec1723_detect(struct i2c_client *client,
 static int mec1723_probe(struct i2c_client *client) {
 
 	enum chips chip;
-	static const char * const names[] = {
-		[mec1723] = "MEC1723",
-	};
+	//static const char * const names[] = {
+	//	[mec1723] = "MEC1723",
+	//};
 
 	struct mec1723_data *data;
 	struct device *hwmon_dev;
-	int i, ret = 0, revision, group_num = 0;
+	int ret = 0, group_num = 0;
 	const struct i2c_device_id *id = i2c_match_id(mec1723_id, client);
 
 	// From below here I've mostly just copy pasted so long as an
@@ -243,7 +245,7 @@ static int mec1723_probe(struct i2c_client *client) {
 	else
 		chip = id->driver_data;
 
-	data->groups[group_num++] = &temp_attr_group;
+	data->groups[group_num++] = &mec1723_attr_group;
 
 	/* register device with all the acquired attributes */
 	hwmon_dev = devm_hwmon_device_register_with_groups(&client->dev,
@@ -287,7 +289,7 @@ static int mec1723_update_measure(struct device *dev)
 			case CPU:
 				ret = mec1723_cpu_temp(client);
 				if (ret > 0xFFFF) return -1;
-				break
+				break;
 			data->temp[INPUT][i] = (u16)ret;
 		}
 	}
