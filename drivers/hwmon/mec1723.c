@@ -75,7 +75,7 @@ struct mec1723_data {
 };
 
 static struct i2c_driver mec1723_driver;
-static struct mec1723_data *mec7475_update_device(struct device *dev);
+static struct mec1723_data *mec1723_update_device(struct device *dev);
 
 static ssize_t temp_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
