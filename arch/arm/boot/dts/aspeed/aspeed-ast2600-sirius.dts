@@ -676,9 +676,9 @@
 &i2c8 {
 	status = "okay";
 
-	lm75@4e {
+	lm75@4f {
 		compatible = "national,lm75";
-		reg = <0x4e>;
+		reg = <0x4f>;
 	};
 
 };
@@ -689,6 +689,7 @@
 
 &i2c13 {
 	status = "okay";
+	
 	mec1723@2d {
 		compatible = "microchip,mec1723";
 		reg = <0x2d>;
