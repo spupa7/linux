@@ -1,0 +1,44 @@
+Kernel driver mec1723
+=====================
+
+Supported chips:
+
+  * Microchip MEC1723
+
+    Prefix: 'mec1723'
+
+    Addresses scanned: I2C 0x2D
+
+Authors:
+	- Stephen Pupa
+
+
+Description
+-----------
+
+This driver exists
+
+Chip Differences Summary
+------------------------
+
+None
+
+Sysfs Mapping
+-------------
+
+Fill later
+
+Special Features
+----------------
+
+Blank
+
+Fan Speed Control
+-----------------
+
+Hello World
+
+Notes
+-----
+
+See above

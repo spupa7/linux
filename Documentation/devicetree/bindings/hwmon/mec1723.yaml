@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+%YAML 1.2
+---
+# No valid equivalent for mec1723
+# $id: http://devicetree.org/schemas/hwmon/adt7475.yaml#
+# $schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MEC1723 hwmon sensor
+
+maintainers:
+  - Stephen Pupa <spupa@lenovo.com>
+
+description: |
+  The MEC1723 controller
+
+  Description pending
+
+properties:
+  compatible:
+    enum:
+      - microchip,mec1723
+
+  reg:
+    maxItems: 1
+
+required:
+  - compatible
+  - reg
+
+additionalProperties: false
+
+examples:
+  - |
+    i2c {
+      #address-cells = <1>;
+      #size-cells = <0>;
+
+      mec1723@2d {
+        compatible = "microchip,mec1723";
+        reg = <0x2d>;
+      };
+    };

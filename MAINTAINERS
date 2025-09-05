@@ -518,6 +518,10 @@ S:	Maintained
 F:	Documentation/hwmon/adt7475.rst
 F:	drivers/hwmon/adt7475.c
 
+MEC1723 HARDWARE MONITOR DRIVER
+F:	Documentation/hwmon/mec1723.rst
+F:	drivers/hwmon/mec1723.c
+
 ADVANSYS SCSI DRIVER
 M:	Matthew Wilcox <willy@infradead.org>
 M:	Hannes Reinecke <hare@suse.com>
