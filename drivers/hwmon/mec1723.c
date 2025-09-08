@@ -36,8 +36,8 @@
 #define MEC1723_ADDR 0x2d
 
 // Address is implicitly sent?
-static const unsigned short i2c_amb_temp[] = { 0x02, 0x74, 0x8c};
-static const unsigned short i2c_cpu_temp[] = { 0x02, 0x76, 0x8a};
+static const char i2c_amb_temp[] = { 0x02, 0x74, 0x8c};
+static const char i2c_cpu_temp[] = { 0x02, 0x76, 0x8a};
 
 // I don't think this is needed so long as we only use one address 0x2d
 // I2C_CLIENT_END is an "Internal numbers to terminate lists"
@@ -130,7 +130,7 @@ static ssize_t temp_store(struct device *dev, struct device_attribute *attr,
 static int mec1723_amb_temp(struct i2c_client *client)
 {
 	printk("dt_i2c - Now I am in the amb temp function!\n");
-	int val1;
+	//int val1;
 	u8 read_buffer[5];
 	// client, buf, count
 	i2c_master_send(client, i2c_amb_temp, 3);
@@ -138,7 +138,7 @@ static int mec1723_amb_temp(struct i2c_client *client)
 	i2c_master_recv(client, read_buffer, 5);
 	//
 	u16 amb_temp = (read_buffer[2]) | (read_buffer[3] << 8);
-	printk("Amb Temp Res: [%d]\n");
+	printk("Amb Temp Res: [%x]\n", amb_temp);
 	printk("Amb Raw Data: [%x][%x][%x][%x][%x]\n", read_buffer[0], read_buffer[1],
 			read_buffer[2], read_buffer[3], read_buffer[4]);
 	return amb_temp;
@@ -148,16 +148,16 @@ static int mec1723_amb_temp(struct i2c_client *client)
 static int mec1723_cpu_temp(struct i2c_client *client)
 {
 	printk("dt_i2c - Now I am in the cpu temp function!\n");
-	int val1;
+	//int val1;
 	u8 read_buffer[5];
 	// client, command, data (u16)
-	u16 temp_data = (u16)i2c_cpu_temp[1] + ((u16)i2c_cpu_temp[2] << 8)
+	u16 temp_data = (u16)i2c_cpu_temp[1] + ((u16)i2c_cpu_temp[2] << 8);
 	i2c_smbus_write_word_data(client, i2c_cpu_temp[0], temp_data);
 	// client, command, length, values (buffer)
 	i2c_smbus_read_i2c_block_data(client, 0x00, 0x05, read_buffer);
 	//
 	u16 cpu_temp = (read_buffer[2]) | (read_buffer[3] << 8);
-	printk("CPU Temp Res: [%d]\n");
+	printk("CPU Temp Res: [%x]\n", cpu_temp);
 	printk("CPU Raw Data: [%x][%x][%x][%x][%x]\n", read_buffer[0], read_buffer[1],
 			read_buffer[2], read_buffer[3], read_buffer[4]);
 	return cpu_temp;
