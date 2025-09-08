@@ -116,7 +116,7 @@ static ssize_t temp_show(struct device *dev, struct device_attribute *attr,
 static ssize_t temp_store(struct device *dev, struct device_attribute *attr,
 			  const char *buf, size_t count)
 {
-	printk("dt_i2c - Now I am in the temp store function!\n");
+	printk("dt_i2c - Now I am in the temp store function! - No data present!\n");
 	//sprintf(buf, "Now I am in the temp store function!\n");
 	// This entire function seems dedicated to writing a min/max setting
 	// to the sensor, unneeded in our application
@@ -139,8 +139,10 @@ static int mec1723_amb_temp(struct i2c_client *client)
 		val1 = i2c_smbus_read_byte(client);
 		read_buffer[i] = val1;
 	}
-	printk("Returning from amb temp function\n");
 	u16 amb_temp = (read_buffer[2]) | (read_buffer[3] << 8);
+	printk("Amb Temp Res: [%d]\n");
+	printk("Amb Raw Data: [%x][%x][%x][%x][%x]\n", read_buffer[0], read_buffer[1],
+			read_buffer[2], read_buffer[3], read_buffer[4]);
 	return amb_temp;
 }
 
@@ -158,8 +160,10 @@ static int mec1723_cpu_temp(struct i2c_client *client)
 		val1 = i2c_smbus_read_byte(client);
 		read_buffer[i] = val1;
 	}
-	printk("Returning from cpu temp function\n");
 	u16 cpu_temp = (read_buffer[2]) | (read_buffer[3] << 8);
+	printk("CPU Temp Res: [%d]\n");
+	printk("CPU Raw Data: [%x][%x][%x][%x][%x]\n", read_buffer[0], read_buffer[1],
+			read_buffer[2], read_buffer[3], read_buffer[4]);
 	return cpu_temp;
 }
 
